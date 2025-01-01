@@ -15,9 +15,17 @@ if (command == ".dbinfo")
 {
     databaseFile.Seek(16, SeekOrigin.Begin); // Skip the first 16 bytes
     byte[] pageSizeBytes = new byte[2];
-    databaseFile.Read(pageSizeBytes, 0, 2);
+    databaseFile.ReadExactly(pageSizeBytes, 0, 2);
     var pageSize = ReadUInt16BigEndian(pageSizeBytes);
     Console.WriteLine($"database page size: {pageSize}");
+
+    databaseFile.Seek(100, SeekOrigin.Begin); // Skip The Database Header
+
+    databaseFile.Seek(3, SeekOrigin.Current); // Skip the first 3 bytes
+    byte[] numberOfTablesBytes = new byte[2];
+    databaseFile.ReadExactly(numberOfTablesBytes, 0, 2);
+    var numberOfTables = ReadUInt16BigEndian(numberOfTablesBytes);
+    Console.WriteLine($"number of tables: {numberOfTables}");
 }
 else
 {
