@@ -128,7 +128,7 @@ else if (command == ".tables")
         Console.Write(tableName + " ");
     }
 }
-else if (command.StartsWith("SELECT COUNT(*) FROM"))
+else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCultureIgnoreCase))
 {
     var tableName = command.Split(" ")[3];
 
