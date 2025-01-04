@@ -1,5 +1,6 @@
-namespace codecrafters_sqlite.Sqlite;
+namespace codecrafters_sqlite.Sqlite.Pages;
 
+// B-tree Page Type: https://www.sqlite.org/fileformat.html#b_tree_pages
 public enum PageType : byte
 {
     /*
