@@ -19,16 +19,16 @@ public record Page
         Cells = GetCells(databaseFileStream);
     }
 
-    public Page(Stream databaseFileStream)
+    public Page(Stream pageStream)
     {
-        ArgumentNullException.ThrowIfNull(databaseFileStream, nameof(databaseFileStream));
+        ArgumentNullException.ThrowIfNull(pageStream, nameof(pageStream));
 
-        if (databaseFileStream.CanRead == false)
-            throw new ArgumentException("The stream must be readable", nameof(databaseFileStream));
+        if (pageStream.CanRead == false)
+            throw new ArgumentException("The stream must be readable", nameof(pageStream));
 
-        Header = new PageHeader(databaseFileStream);
-        CellPointers = GetCellPointers(databaseFileStream);
-        Cells = GetCells(databaseFileStream);
+        Header = new PageHeader(pageStream);
+        CellPointers = GetCellPointers(pageStream);
+        Cells = GetCells(pageStream);
     }
 
     public DbHeader? DbHeader { get; private init; }

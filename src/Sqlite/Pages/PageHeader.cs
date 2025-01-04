@@ -5,23 +5,23 @@ namespace codecrafters_sqlite.Sqlite.Pages;
 // B-tree Page Header Format: https://www.sqlite.org/fileformat.html#b_tree_pages
 public record PageHeader
 {
-    public PageHeader(Stream databaseFileStream)
+    public PageHeader(Stream pageStream)
     {
-        ArgumentNullException.ThrowIfNull(databaseFileStream, nameof(databaseFileStream));
+        ArgumentNullException.ThrowIfNull(pageStream, nameof(pageStream));
 
-        if (databaseFileStream.CanRead == false)
-            throw new ArgumentException("The stream must be readable", nameof(databaseFileStream));
+        if (pageStream.CanRead == false)
+            throw new ArgumentException("The stream must be readable", nameof(pageStream));
 
-        PageType = (PageType)databaseFileStream.ReadByte();
-        FirstFreeblockOffset = databaseFileStream.ReadUInt16BigEndian();
-        NumberOfCells = databaseFileStream.ReadUInt16BigEndian();
-        StartOfCellContentArea = databaseFileStream.ReadUInt16BigEndian();
-        FragmentedFreeBytes = (byte)databaseFileStream.ReadByte();
+        PageType = (PageType)pageStream.ReadByte();
+        FirstFreeblockOffset = pageStream.ReadUInt16BigEndian();
+        NumberOfCells = pageStream.ReadUInt16BigEndian();
+        StartOfCellContentArea = pageStream.ReadUInt16BigEndian();
+        FragmentedFreeBytes = (byte)pageStream.ReadByte();
 
         //The four-byte page number at offset 8 is the right-most pointer.
         //This value appears in the header of interior b-tree pages only and is omitted from all other pages.
         if (PageType is PageType.InteriorTable or PageType.InteriorIndex) 
-            RightMostPointer = databaseFileStream.ReadUInt32BigEndian();
+            RightMostPointer = pageStream.ReadUInt32BigEndian();
     }
     public PageType PageType { get; }
     public ushort FirstFreeblockOffset { get; private init; }
