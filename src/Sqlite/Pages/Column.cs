@@ -5,17 +5,23 @@ namespace codecrafters_sqlite.Sqlite.Pages;
 
 public record Column
 {
-    public Column(SerialTypeCode serialTypeCode, Stream recordStream)
+    public Column(SerialTypeCode serialTypeCode, int index, Stream recordStream)
     {
         SerialTypeCode = serialTypeCode;
+        Index = index;
+        
+        var contentReadSize = serialTypeCode.ContentSize > recordStream.Length - recordStream.Position
+            ? (int)(recordStream.Length - recordStream.Position)
+            : serialTypeCode.ContentSize;
 
-        var buffer = new byte[serialTypeCode.ContentSize];
-        recordStream.ReadExactly(buffer, 0, serialTypeCode.ContentSize);
+        var buffer = new byte[contentReadSize];
+        recordStream.ReadExactly(buffer, 0, contentReadSize);
         Value = GetValue(buffer);
     }
 
     public SerialTypeCode SerialTypeCode { get; }
     public object? Value { get; private set; }
+    public int Index { get; set; }
 
     private object? GetValue(byte[] buffer)
     {

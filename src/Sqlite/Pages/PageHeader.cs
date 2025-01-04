@@ -5,7 +5,7 @@ namespace codecrafters_sqlite.Sqlite.Pages;
 // B-tree Page Header Format: https://www.sqlite.org/fileformat.html#b_tree_pages
 public record PageHeader
 {
-    public PageHeader(FileStream databaseFileStream)
+    public PageHeader(Stream databaseFileStream)
     {
         ArgumentNullException.ThrowIfNull(databaseFileStream, nameof(databaseFileStream));
 
@@ -23,7 +23,7 @@ public record PageHeader
         if (PageType is PageType.InteriorTable or PageType.InteriorIndex) 
             RightMostPointer = databaseFileStream.ReadUInt32BigEndian();
     }
-    public PageType PageType { get; private init; }
+    public PageType PageType { get; }
     public ushort FirstFreeblockOffset { get; private init; }
     public ushort NumberOfCells { get; private init; }
     public ushort StartOfCellContentArea { get; private init; }

@@ -20,8 +20,8 @@ public record Record
         Columns = GetColumns(recordStream);
     }
 
-    public int HeaderSize { get; private init; }
-    public SerialTypeCode[] SerialTypeCodes { get; private set; }
+    public int HeaderSize { get; }
+    public SerialTypeCode[] SerialTypeCodes { get; }
     public Column[] Columns { get; private set; }
 
     private SerialTypeCode[] GetSerialTypeCodes(Stream recordStream)
@@ -29,7 +29,7 @@ public record Record
         var serialTypeCodes = new List<SerialTypeCode>();
         while (recordStream.Position < HeaderSize)
         {
-            var serialTypeValue = (byte)recordStream.ReadVarint();
+            var serialTypeValue = recordStream.ReadVarint();
             SerialTypeCode serialTypeCode = new(serialTypeValue);
             serialTypeCodes.Add(serialTypeCode);
         }
@@ -45,6 +45,6 @@ public record Record
         if (recordStream.Position >= recordStream.Length)
             throw new InvalidOperationException("No columns found in the record body");
 
-        return SerialTypeCodes.Select(serialTypeCode => new Column(serialTypeCode, recordStream)).ToArray();
+        return SerialTypeCodes.Select((serialTypeCode, index) => new Column(serialTypeCode, index, recordStream)).ToArray();
     }
 }

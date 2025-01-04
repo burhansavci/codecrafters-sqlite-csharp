@@ -13,7 +13,19 @@ public record Page
         if (databaseFileStream.CanRead == false)
             throw new ArgumentException("The stream must be readable", nameof(databaseFileStream));
 
-        if (databaseFileStream.Position == 0) DbHeader = new DbHeader(databaseFileStream);
+        DbHeader = new DbHeader(databaseFileStream);
+        Header = new PageHeader(databaseFileStream);
+        CellPointers = GetCellPointers(databaseFileStream);
+        Cells = GetCells(databaseFileStream);
+    }
+
+    public Page(Stream databaseFileStream)
+    {
+        ArgumentNullException.ThrowIfNull(databaseFileStream, nameof(databaseFileStream));
+
+        if (databaseFileStream.CanRead == false)
+            throw new ArgumentException("The stream must be readable", nameof(databaseFileStream));
+
         Header = new PageHeader(databaseFileStream);
         CellPointers = GetCellPointers(databaseFileStream);
         Cells = GetCells(databaseFileStream);
@@ -24,7 +36,7 @@ public record Page
     public Cell[] Cells { get; private set; }
     private ushort[] CellPointers { get; }
 
-    private ushort[] GetCellPointers(FileStream databaseFileStream)
+    private ushort[] GetCellPointers(Stream databaseFileStream)
     {
         var cellPointers = new ushort[Header.NumberOfCells];
         for (var i = 0; i < Header.NumberOfCells; i++)
@@ -37,7 +49,7 @@ public record Page
         return cellPointers;
     }
 
-    private Cell[] GetCells(FileStream databaseFileStream)
+    private Cell[] GetCells(Stream databaseFileStream)
     {
         if (CellPointers.Length == 0)
             return [];
