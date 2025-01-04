@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Text;
+
 namespace codecrafters_sqlite.Sqlite.Extensions;
 
 public static class StreamExtensions
@@ -43,5 +46,33 @@ public static class StreamExtensions
         var moreBytes = (byteValue & VarintContinueFlag) != 0;
 
         return (value, moreBytes);
+    }
+    
+    public static byte[] ReadBytes(this Stream stream, int length)
+    {
+        var buffer = new byte[length];
+        stream.ReadExactly(buffer, 0, length);
+        return buffer;
+    }
+    
+    public static string ReadString(this Stream stream, int length)
+    {
+        var buffer = new byte[length];
+        stream.ReadExactly(buffer, 0, length);
+        return Encoding.UTF8.GetString(buffer);
+    }
+    
+    public static ushort ReadUInt16BigEndian(this Stream stream)
+    {
+        var buffer = new byte[2];
+        stream.ReadExactly(buffer, 0, 2);
+        return BinaryPrimitives.ReadUInt16BigEndian(buffer);
+    }
+    
+    public static uint ReadUInt32BigEndian(this Stream stream)
+    {
+        var buffer = new byte[4];
+        stream.ReadExactly(buffer, 0, 4);
+        return BinaryPrimitives.ReadUInt32BigEndian(buffer);
     }
 }

@@ -1,6 +1,7 @@
 using System.Text;
 using codecrafters_sqlite.Sqlite;
 using codecrafters_sqlite.Sqlite.Extensions;
+using codecrafters_sqlite.Sqlite.Pages;
 using static System.Buffers.Binary.BinaryPrimitives;
 
 // Parse arguments
@@ -16,13 +17,8 @@ var databaseFile = File.OpenRead(path);
 // Parse command and act accordingly
 if (command == ".dbinfo")
 {
-    databaseFile.Seek(16, SeekOrigin.Begin); // Skip the first 16 bytes
-    byte[] pageSizeBytes = new byte[2];
-    databaseFile.ReadExactly(pageSizeBytes, 0, 2);
-    var pageSize = ReadUInt16BigEndian(pageSizeBytes);
-    Console.WriteLine($"database page size: {pageSize}");
-
-    databaseFile.Seek(100, SeekOrigin.Begin); // Skip The Database Header
+    var dbHeader = new DbHeader(databaseFile);
+    Console.WriteLine($"database page size: {dbHeader.PageSize}");
 
     databaseFile.Seek(3, SeekOrigin.Current); // Skip the first 3 bytes
     byte[] numberOfCellsBytes = new byte[2];
@@ -32,7 +28,7 @@ if (command == ".dbinfo")
 }
 else if (command == ".tables")
 {
-    databaseFile.Seek(100, SeekOrigin.Begin); // Skip The Database Header
+    _ = new DbHeader(databaseFile); // Skip The Database Header
 
     // Read the B-tree Page Header
     var btreePageType = (PageType)databaseFile.ReadByte();
@@ -132,12 +128,7 @@ else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCult
 {
     var tableName = command.Split(" ")[3];
 
-    databaseFile.Seek(16, SeekOrigin.Begin); // Skip the first 16 bytes
-    byte[] pageSizeBytes = new byte[2];
-    databaseFile.ReadExactly(pageSizeBytes, 0, 2);
-    var pageSize = ReadUInt16BigEndian(pageSizeBytes);
-
-    databaseFile.Seek(100, SeekOrigin.Begin); // Skip The Database Header
+    var dbHeader = new DbHeader(databaseFile);
 
     // Read the B-tree Page Header
     var btreePageType = (PageType)databaseFile.ReadByte();
@@ -236,7 +227,7 @@ else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCult
     }
 
     // Read the root page
-    databaseFile.Seek((rootPage - 1) * pageSize, SeekOrigin.Begin);
+    databaseFile.Seek((rootPage - 1) * dbHeader.PageSize, SeekOrigin.Begin);
 
     var rootPageType = (PageType)databaseFile.ReadByte();
 
