@@ -48,17 +48,23 @@ else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCult
 }
 else if (command.StartsWith("SELECT", StringComparison.CurrentCultureIgnoreCase))
 {
-    var tableName = command.Split(" ")[3];
+    var tableName = command.Split("FROM".ToLowerInvariant())[1].Trim();
 
     var schemaPage = new Page(databaseFile);
 
     var schemaCell = schemaPage.Cells.First(cell => cell.Record.Columns[2].Value!.ToString() == tableName);
 
-    var columnName = command.Split(" ")[1];
+    var columnNames = command
+        .Split("SELECT".ToLowerInvariant(), StringSplitOptions.RemoveEmptyEntries)[0]
+        .Split("FROM".ToLowerInvariant(), StringSplitOptions.RemoveEmptyEntries)[0]
+        .Split(",", StringSplitOptions.RemoveEmptyEntries)
+        .Select(x => x.Trim())
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .ToArray();
 
     var sql = schemaCell.Record.Columns[^1].Value!.ToString()!;
 
-    var columnOrder = GetColumnOrder(sql, columnName);
+    var columnOrders = columnNames.Select(x => GetColumnOrder(sql, x)).ToArray();
 
     var rootPage = (byte)schemaCell.Record.Columns[3].Value!;
 
@@ -70,8 +76,16 @@ else if (command.StartsWith("SELECT", StringComparison.CurrentCultureIgnoreCase)
 
     foreach (var cell in page.Cells)
     {
-        var columnValue = cell.Record.Columns[columnOrder].Value!.ToString();
-        Console.WriteLine(columnValue);
+        for (int i = 0; i < columnOrders.Length; i++)
+        {
+            var columnOrder = columnOrders[i];
+            var column = cell.Record.Columns[columnOrder];
+            Console.Write(column.Value);
+            if (i < columnOrders.Length - 1)
+                Console.Write("|");
+        }
+
+        Console.WriteLine();
     }
 }
 else
