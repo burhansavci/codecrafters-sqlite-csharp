@@ -15,7 +15,7 @@ public record Column
             : serialTypeCode.ContentSize;
 
         var buffer = new byte[contentReadSize];
-        recordStream.ReadExactly(buffer, 0, contentReadSize);
+        recordStream.ReadExactly(buffer, 0, (int)contentReadSize);
         Value = GetValue(buffer);
     }
 

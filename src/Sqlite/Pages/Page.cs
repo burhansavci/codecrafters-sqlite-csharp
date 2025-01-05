@@ -36,20 +36,20 @@ public record Page
     public Cell[] Cells { get; private set; }
     private ushort[] CellPointers { get; }
 
-    private ushort[] GetCellPointers(Stream databaseFileStream)
+    private ushort[] GetCellPointers(Stream pageStream)
     {
         var cellPointers = new ushort[Header.NumberOfCells];
         for (var i = 0; i < Header.NumberOfCells; i++)
         {
             var cellPointerBytes = new byte[2];
-            databaseFileStream.ReadExactly(cellPointerBytes, 0, 2);
+            pageStream.ReadExactly(cellPointerBytes, 0, 2);
             cellPointers[i] = BinaryPrimitives.ReadUInt16BigEndian(cellPointerBytes);
         }
 
         return cellPointers;
     }
 
-    private Cell[] GetCells(Stream databaseFileStream)
+    private Cell[] GetCells(Stream pageStream)
     {
         if (CellPointers.Length == 0)
             return [];
@@ -57,18 +57,28 @@ public record Page
         var cells = new Cell[Header.NumberOfCells];
         for (var i = 0; i < Header.NumberOfCells; i++)
         {
-            databaseFileStream.Seek(CellPointers[i], SeekOrigin.Begin);
+            pageStream.Seek(CellPointers[i], SeekOrigin.Begin);
 
-            var size = databaseFileStream.ReadVarint();
-            var rowId = databaseFileStream.ReadVarint();
+            if (Header.PageType == PageType.InteriorTable)
+            {
+                var leftChildPageNumber = pageStream.ReadUInt32BigEndian();
+                var rowId = pageStream.ReadVarint();
 
-            var recordBytes = new byte[size];
-            databaseFileStream.ReadExactly(recordBytes, 0, size);
+                cells[i] = new Cell(leftChildPageNumber, null, rowId, null, null);
+            }
+            else if (Header.PageType == PageType.LeafTable)
+            {
+                var size = pageStream.ReadVarint();
+                var rowId = pageStream.ReadVarint();
 
-            using var recordStream = new MemoryStream(recordBytes);
-            var record = new Record(recordStream);
+                var recordBytes = new byte[size];
+                pageStream.ReadExactly(recordBytes, 0, (int)size);
 
-            cells[i] = new Cell(size, rowId, record);
+                using var recordStream = new MemoryStream(recordBytes);
+                var record = new Record(recordStream);
+
+                cells[i] = new Cell(null, size, rowId, record, null);
+            }
         }
 
         return cells;

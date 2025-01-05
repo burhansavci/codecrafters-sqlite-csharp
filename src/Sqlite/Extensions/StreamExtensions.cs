@@ -5,30 +5,37 @@ namespace codecrafters_sqlite.Sqlite.Extensions;
 
 public static class StreamExtensions
 {
-    // Each byte contributes 7 bits of data
+    // Each byte contributes 7 bits of data except for the last byte which contributes 8 bits
     private const byte VarintEncodingBits = 7;
 
     // The upper bit indicates whether there are more bytes
     private const byte VarintContinueFlag = 1 << VarintEncodingBits;
 
-    public static int ReadVarint(this Stream stream)
+    public static long ReadVarint(this Stream stream)
     {
-        var value = 0;
-        var length = 0; // the number of bits of data read so far
+        long value = 0;
+        int bytesRead = 0;
 
-        while (true)
+        while (bytesRead < 9)
         {
-            (var byteValue, var moreBytes) = ReadVarintByte(stream);
+            var (byteValue, moreBytes) = ReadVarintByte(stream);
+            bytesRead++;
 
-            // Add in the data bits
-            value |= byteValue << length;
+            if (bytesRead == 9)
+            {
+                // On the 9th byte, we use all 8 bits and don't check the continuation bit
+                value = (value << 8) | byteValue;
+                return value;
+            }
 
-            // Stop if this is the last byte
+            // For bytes 1-8, we only use 7 bits
+            value = (value << VarintEncodingBits) | byteValue;
+
             if (!moreBytes)
                 return value;
-
-            length += VarintEncodingBits;
         }
+
+        throw new InvalidDataException("Varint is too large");
     }
 
     private static (byte Value, bool MoreBytes) ReadVarintByte(Stream stream)
@@ -42,33 +49,33 @@ public static class StreamExtensions
         }
 
         var byteValue = buffer[0];
-        var value = (byte)(byteValue & ~VarintContinueFlag);
         var moreBytes = (byteValue & VarintContinueFlag) != 0;
+        var value = (byte)(byteValue & ~VarintContinueFlag);
 
         return (value, moreBytes);
     }
-    
+
     public static byte[] ReadBytes(this Stream stream, int length)
     {
         var buffer = new byte[length];
         stream.ReadExactly(buffer, 0, length);
         return buffer;
     }
-    
+
     public static string ReadString(this Stream stream, int length)
     {
         var buffer = new byte[length];
         stream.ReadExactly(buffer, 0, length);
         return Encoding.UTF8.GetString(buffer);
     }
-    
+
     public static ushort ReadUInt16BigEndian(this Stream stream)
     {
         var buffer = new byte[2];
         stream.ReadExactly(buffer, 0, 2);
         return BinaryPrimitives.ReadUInt16BigEndian(buffer);
     }
-    
+
     public static uint ReadUInt32BigEndian(this Stream stream)
     {
         var buffer = new byte[4];

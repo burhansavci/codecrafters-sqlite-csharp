@@ -3,7 +3,7 @@ namespace codecrafters_sqlite.Sqlite.Pages;
 // Serial Type Codes: https://www.sqlite.org/fileformat.html#record_format
 public record SerialTypeCode
 {
-    public SerialTypeCode(int value)
+    public SerialTypeCode(long value)
     {
         switch (value)
         {
@@ -126,10 +126,10 @@ public record SerialTypeCode
         }
     }
 
-    public int Value { get; init; }
+    public long Value { get; init; }
     public SerialType Type { get; set; }
     public string Name { get; init; }
-    public int ContentSize { get; init; }
+    public long ContentSize { get; init; }
 }
 
 public enum SerialType

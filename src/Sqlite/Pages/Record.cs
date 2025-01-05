@@ -20,7 +20,7 @@ public record Record
         Columns = GetColumns(recordStream);
     }
 
-    public int HeaderSize { get; }
+    public long HeaderSize { get; }
     public SerialTypeCode[] SerialTypeCodes { get; }
     public Column[] Columns { get; private set; }
 

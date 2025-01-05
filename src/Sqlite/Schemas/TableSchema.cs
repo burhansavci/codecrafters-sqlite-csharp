@@ -31,11 +31,7 @@ public record TableSchema
             .Select((column, index) =>
             {
                 var parts = column.Trim().Split(" ", 2);
-                return new ColumnSchema(
-                    Name: parts[0],
-                    Type: parts.Length > 1 ? parts[1] : string.Empty,
-                    Index: index
-                );
+                return new ColumnSchema(parts, index);
             })
             .ToArray();
     }

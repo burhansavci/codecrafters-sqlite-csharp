@@ -21,9 +21,9 @@ if (command == ".dbinfo")
 }
 else if (command == ".tables")
 {
-    var page = new Page(databaseFile);
+    var schemaPage = new Page(databaseFile);
 
-    foreach (var cell in page.Cells)
+    foreach (var cell in schemaPage.Cells)
     {
         var tableName = cell.Record.Columns[2].Value!.ToString();
 
@@ -58,14 +58,22 @@ else if (command.StartsWith("SELECT", StringComparison.InvariantCultureIgnoreCas
     var createSql = schemaCell.Record.Columns[^1].Value!.ToString()!;
     query.ApplySchema(new TableSchema(createSql));
 
-    var rootPage = (byte)schemaCell.Record.Columns[3].Value!;
-    var pageBytes = new byte[schemaPage.DbHeader!.PageSize];
-    databaseFile.Seek((rootPage - 1) * schemaPage.DbHeader!.PageSize, SeekOrigin.Begin);
-    databaseFile.ReadExactly(pageBytes, 0, schemaPage.DbHeader.PageSize);
-    using var pageStream = new MemoryStream(pageBytes);
-    var page = new Page(pageStream);
+    var rootPageNumber = (byte)schemaCell.Record.Columns[3].Value!;
+    var rootPageBytes = new byte[schemaPage.DbHeader!.PageSize];
+    databaseFile.Seek((rootPageNumber - 1) * schemaPage.DbHeader!.PageSize, SeekOrigin.Begin);
+    databaseFile.ReadExactly(rootPageBytes, 0, schemaPage.DbHeader.PageSize);
+    using var rootPageStream = new MemoryStream(rootPageBytes);
+    var rootPage = new Page(rootPageStream);
 
-    var cells = query.GetFilteredCells(page);
+    Cell[] cells = [];
+    if (rootPage.Header.PageType == PageType.LeafTable)
+    {
+        cells = query.GetFilteredCells(rootPage);
+    }
+    else if (rootPage.Header.PageType == PageType.InteriorTable)
+    {
+        cells = GetCells(rootPage, schemaPage, query);
+    }
 
     foreach (var cell in cells)
     {
@@ -74,7 +82,15 @@ else if (command.StartsWith("SELECT", StringComparison.InvariantCultureIgnoreCas
             var queryColumn = query.Columns[i];
             var recordColumn = cell.Record.Columns[queryColumn.Index];
 
-            Console.Write(recordColumn.Value);
+            if (queryColumn.IsRowIdAlias && recordColumn.Value is null)
+            {
+                Console.Write(cell.RowId);
+            }
+            else
+            {
+                Console.Write(recordColumn.Value);
+            }
+
             if (i < query.Columns.Length - 1)
                 Console.Write("|");
         }
@@ -85,4 +101,42 @@ else if (command.StartsWith("SELECT", StringComparison.InvariantCultureIgnoreCas
 else
 {
     throw new InvalidOperationException($"Invalid command: {command}");
+}
+
+Cell[] GetCells(Page rootPage, Page schemaPage, SqlQuery query)
+{
+    List<Cell> cells = [];
+
+    for (var i = 0; i <= rootPage.Cells.Length; i++)
+    {
+        uint pageNumber;
+        if (i < rootPage.Cells.Length)
+        {
+            // For all but the last iteration, use the left child page number from the current cell
+            pageNumber = rootPage.Cells[i].LeftChildPageNumber!.Value;
+        }
+        else
+        {
+            // For the last iteration, use the rightmost child page number from the page header
+            pageNumber = rootPage.Header.RightMostPointer;
+        }
+
+        var childPageBytes = new byte[schemaPage.DbHeader!.PageSize];
+        databaseFile.Seek((pageNumber - 1) * schemaPage.DbHeader!.PageSize, SeekOrigin.Begin);
+        databaseFile.ReadExactly(childPageBytes, 0, schemaPage.DbHeader.PageSize);
+
+        using var childPageStream = new MemoryStream(childPageBytes);
+        var childPage = new Page(childPageStream);
+
+        if (childPage.Header.PageType == PageType.LeafTable)
+        {
+            cells.AddRange(query.GetFilteredCells(childPage));
+        }
+        else if (childPage.Header.PageType == PageType.InteriorTable)
+        {
+            cells.AddRange(GetCells(childPage, schemaPage, query));
+        }
+    }
+
+    return cells.ToArray();
 }

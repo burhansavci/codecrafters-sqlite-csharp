@@ -20,7 +20,7 @@ public record SqlQuery
         (TableName, WhereColumnName, WhereValue) = ParseFromClause(parts[1]);
     }
 
-    public (string Name, int Index)[]? Columns { get; private set; }
+    public ColumnSchema[]? Columns { get; private set; }
     public string TableName { get; }
     public string? WhereColumnName { get; }
     public string? WhereValue { get; }
@@ -28,12 +28,12 @@ public record SqlQuery
 
     public void ApplySchema(TableSchema schema)
     {
-        Columns = new (string Name, int Index)[_columnNames.Length];
+        Columns = new ColumnSchema[_columnNames.Length];
 
         for (var i = 0; i < _columnNames.Length; i++)
         {
             var column = schema.GetColumn(_columnNames[i]);
-            Columns[i] = (column.Name, column.Index);
+            Columns[i] = column;
 
             if (string.Equals(WhereColumnName, column.Name, StringComparison.InvariantCultureIgnoreCase))
                 WhereColumnIndex = column.Index;
@@ -80,6 +80,12 @@ public record SqlQuery
     {
         if (WhereColumnIndex is null)
             return true;
+
+        if (cell.Record.Columns[WhereColumnIndex.Value].Value is null)
+            return false;
+
+        if (Columns!.First(x => x.IsRowIdAlias).Index == WhereColumnIndex && WhereValue is not null)
+            return cell.RowId == long.Parse(WhereValue);
 
         var columnValue = cell.Record.Columns.First(x => x.Index == WhereColumnIndex).Value?.ToString();
 
