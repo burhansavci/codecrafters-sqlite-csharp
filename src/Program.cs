@@ -1,4 +1,6 @@
+using codecrafters_sqlite.Sqlite;
 using codecrafters_sqlite.Sqlite.Pages;
+using codecrafters_sqlite.Sqlite.Schemas;
 
 // Parse arguments
 var (path, command) = args.Length switch
@@ -48,40 +50,32 @@ else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCult
 }
 else if (command.StartsWith("SELECT", StringComparison.CurrentCultureIgnoreCase))
 {
-    var tableName = command.Split("FROM".ToLowerInvariant())[1].Trim();
+    var query = new SqlQuery(command);
 
     var schemaPage = new Page(databaseFile);
+    var schemaCell = schemaPage.Cells.First(cell => cell.Record.Columns[2].Value!.ToString() == query.TableName);
 
-    var schemaCell = schemaPage.Cells.First(cell => cell.Record.Columns[2].Value!.ToString() == tableName);
-
-    var columnNames = command
-        .Split("SELECT".ToLowerInvariant(), StringSplitOptions.RemoveEmptyEntries)[0]
-        .Split("FROM".ToLowerInvariant(), StringSplitOptions.RemoveEmptyEntries)[0]
-        .Split(",", StringSplitOptions.RemoveEmptyEntries)
-        .Select(x => x.Trim())
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .ToArray();
-
-    var sql = schemaCell.Record.Columns[^1].Value!.ToString()!;
-
-    var columnOrders = columnNames.Select(x => GetColumnOrder(sql, x)).ToArray();
+    var createSql = schemaCell.Record.Columns[^1].Value!.ToString()!;
+    query.ApplySchema(new TableSchema(createSql));
 
     var rootPage = (byte)schemaCell.Record.Columns[3].Value!;
-
     var pageBytes = new byte[schemaPage.DbHeader!.PageSize];
     databaseFile.Seek((rootPage - 1) * schemaPage.DbHeader!.PageSize, SeekOrigin.Begin);
     databaseFile.ReadExactly(pageBytes, 0, schemaPage.DbHeader.PageSize);
     using var pageStream = new MemoryStream(pageBytes);
     var page = new Page(pageStream);
 
-    foreach (var cell in page.Cells)
+    var cells = query.GetFilteredCells(page);
+
+    foreach (var cell in cells)
     {
-        for (int i = 0; i < columnOrders.Length; i++)
+        for (int i = 0; i < query.Columns!.Length; i++)
         {
-            var columnOrder = columnOrders[i];
-            var column = cell.Record.Columns[columnOrder];
-            Console.Write(column.Value);
-            if (i < columnOrders.Length - 1)
+            var queryColumn = query.Columns[i];
+            var recordColumn = cell.Record.Columns[queryColumn.Index];
+
+            Console.Write(recordColumn.Value);
+            if (i < query.Columns.Length - 1)
                 Console.Write("|");
         }
 
@@ -91,19 +85,4 @@ else if (command.StartsWith("SELECT", StringComparison.CurrentCultureIgnoreCase)
 else
 {
     throw new InvalidOperationException($"Invalid command: {command}");
-}
-
-int GetColumnOrder(string createSql, string columnName)
-{
-    var columns = createSql.Split("(")[1].Split(",");
-
-    columns[^1] = columns[^1].Replace(")", "");
-
-    for (var i = 0; i < columns.Length; i++)
-    {
-        if (string.Equals(columns[i].Trim().Split(" ")[0], columnName, StringComparison.CurrentCultureIgnoreCase))
-            return i;
-    }
-
-    throw new InvalidOperationException($"Column {columnName} not found in CREATE TABLE statement {createSql}");
 }
