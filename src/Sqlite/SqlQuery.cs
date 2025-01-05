@@ -84,7 +84,7 @@ public record SqlQuery
         if (cell.Record.Columns[WhereColumnIndex.Value].Value is null)
             return false;
 
-        if (Columns!.First(x => x.IsRowIdAlias).Index == WhereColumnIndex && WhereValue is not null)
+        if (Columns!.FirstOrDefault(x => x.IsRowIdAlias)?.Index == WhereColumnIndex && WhereValue is not null)
             return cell.RowId == long.Parse(WhereValue);
 
         var columnValue = cell.Record.Columns.First(x => x.Index == WhereColumnIndex).Value?.ToString();
