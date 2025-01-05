@@ -33,7 +33,7 @@ else if (command == ".tables")
         Console.Write(tableName + " ");
     }
 }
-else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCultureIgnoreCase))
+else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.InvariantCultureIgnoreCase))
 {
     var tableName = command.Split(" ")[3];
 
@@ -48,7 +48,7 @@ else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.CurrentCult
 
     Console.WriteLine(pageHeader.NumberOfCells);
 }
-else if (command.StartsWith("SELECT", StringComparison.CurrentCultureIgnoreCase))
+else if (command.StartsWith("SELECT", StringComparison.InvariantCultureIgnoreCase))
 {
     var query = new SqlQuery(command);
 

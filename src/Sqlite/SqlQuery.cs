@@ -35,7 +35,7 @@ public record SqlQuery
             var column = schema.GetColumn(_columnNames[i]);
             Columns[i] = (column.Name, column.Index);
 
-            if (string.Equals(WhereColumnName, column.Name, StringComparison.CurrentCultureIgnoreCase))
+            if (string.Equals(WhereColumnName, column.Name, StringComparison.InvariantCultureIgnoreCase))
                 WhereColumnIndex = column.Index;
         }
 
@@ -83,6 +83,6 @@ public record SqlQuery
 
         var columnValue = cell.Record.Columns.First(x => x.Index == WhereColumnIndex).Value?.ToString();
 
-        return string.Equals(columnValue, WhereValue, StringComparison.CurrentCultureIgnoreCase);
+        return string.Equals(columnValue, WhereValue, StringComparison.InvariantCultureIgnoreCase);
     }
 }
