@@ -13,11 +13,12 @@ public record ColumnSchema
             throw new ArgumentException("The parts must be consists of 2 part", nameof(parts));
 
         if (index < 0)
-            throw new ArgumentException("The index must be postive");
+            throw new ArgumentException("The index must be positive");
 
         Name = parts[0];
         Type = parts.Length > 1 ? parts[1] : string.Empty;
         Index = index;
+        // More info about RowIdAlias: https://www.sqlite.org/lang_createtable.html#rowid
         IsRowIdAlias = Type.StartsWith(RowIdAliases, StringComparison.InvariantCultureIgnoreCase) && !Type.EndsWith(RowIdAliasException);
     }
 

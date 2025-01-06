@@ -1,7 +1,7 @@
 using codecrafters_sqlite.Sqlite.Pages;
 using codecrafters_sqlite.Sqlite.Schemas;
 
-namespace codecrafters_sqlite.Sqlite;
+namespace codecrafters_sqlite.Sqlite.Queries;
 
 public record SqlQuery
 {
@@ -44,7 +44,7 @@ public record SqlQuery
             WhereColumnIndex = schema.GetColumn(WhereColumnName).Index;
     }
 
-    public Cell[] GetFilteredCells(Page page) =>
+    public Cell[] GetResult(Page page) =>
         string.IsNullOrWhiteSpace(WhereColumnName)
             ? page.Cells
             : page.Cells.Where(IsMatchingWhereCondition).ToArray();
@@ -81,7 +81,7 @@ public record SqlQuery
         if (WhereColumnIndex is null)
             return true;
 
-        if (cell.Record.Columns[WhereColumnIndex.Value].Value is null)
+        if (cell.Record?.Columns[WhereColumnIndex.Value].Value is null)
             return false;
 
         if (Columns!.FirstOrDefault(x => x.IsRowIdAlias)?.Index == WhereColumnIndex && WhereValue is not null)
