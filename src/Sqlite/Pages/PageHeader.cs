@@ -28,5 +28,5 @@ public record PageHeader
     public ushort NumberOfCells { get; private init; }
     public ushort StartOfCellContentArea { get; private init; }
     public byte FragmentedFreeBytes { get; private init; }
-    public uint RightMostPointer { get; private init; }
+    public uint? RightMostPointer { get; private init; }
 }

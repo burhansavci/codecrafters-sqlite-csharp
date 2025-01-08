@@ -17,21 +17,82 @@ public record Database
 
         _databaseFileStream = databaseFileStream;
 
-        SchemaPage = new Page(_databaseFileStream);
+        SchemaPage = new SchemaPage(new Page(_databaseFileStream));
     }
 
-    public Page SchemaPage { get; }
+    public SchemaPage SchemaPage { get; }
 
     public SqlQueryResult ExecuteQuery(SqlQuery query)
     {
-        var tableSchemaCell = GetSchemaCell(query.TableName);
+        ArgumentNullException.ThrowIfNull(query);
 
-        var tableSchema = GetTableSchema(tableSchemaCell);
-        query.ApplySchema(tableSchema);
+        var tableEntry = SchemaPage.GetTableEntry(query.TableName);
+        if (tableEntry is null)
+            throw new InvalidOperationException($"Table {query.TableName} not found");
 
-        var rootPageNumber = (byte)tableSchemaCell.Record!.Columns[3].Value!;
-        Page rootPage = GetPage(rootPageNumber);
+        query.ApplyTableSchema(tableEntry);
 
+        if (query.Where == null)
+            return DoFullTableScan(query, tableEntry);
+
+        // If there is a WHERE clause, try to use an index if available
+        var indexEntry = SchemaPage.GetIndexEntry(query.TableName);
+        query.ApplyIndexSchema(indexEntry);
+
+        if (query.Where.IndexColumn != null)
+        {
+            var matchingRowIds = DoIndexScan(query, indexEntry);
+
+            return DoKeyLookup(query, tableEntry, matchingRowIds);
+        }
+
+        // If no index is available, do a full table scan
+        return DoFullTableScan(query, tableEntry);
+    }
+
+    public Page GetPage(int pageNumber)
+    {
+        var pageBytes = new byte[SchemaPage.DbHeader.PageSize];
+
+        _databaseFileStream.Seek((pageNumber - 1) * SchemaPage.DbHeader.PageSize, SeekOrigin.Begin);
+        _databaseFileStream.ReadExactly(pageBytes, 0, SchemaPage.DbHeader.PageSize);
+
+        using var pageStream = new MemoryStream(pageBytes);
+        return new Page(pageStream);
+    }
+
+    private long[] DoIndexScan(SqlQuery query, SchemaEntry? indexEntry)
+    {
+        var indexRootPage = GetPage(indexEntry!.RootPage);
+
+        var indexCells = indexRootPage.Header.PageType switch
+        {
+            PageType.LeafIndex => query.GetResult(indexRootPage),
+            PageType.InteriorIndex => TraversePages(indexRootPage, query),
+            _ => throw new InvalidOperationException("Unexpected header page type")
+        };
+
+        var matchingRowIds = indexCells.Select(cell => Convert.ToInt64(cell.Record!.Columns[1].Value!)).ToArray();
+        return matchingRowIds;
+    }
+
+    private SqlQueryResult DoKeyLookup(SqlQuery query, SchemaEntry tableEntry, long[] matchingRowIds)
+    {
+        var tableRootPage = GetPage(tableEntry.RootPage);
+
+        var matchingCells = tableRootPage.Header.PageType switch
+        {
+            PageType.LeafTable => query.GetResult(tableRootPage),
+            PageType.InteriorTable => TraverseTablePages(tableRootPage, matchingRowIds),
+            _ => throw new InvalidOperationException("Unexpected header page type")
+        };
+
+        return new SqlQueryResult(matchingCells.ToArray(), query);
+    }
+
+    private SqlQueryResult DoFullTableScan(SqlQuery query, SchemaEntry tableEntry)
+    {
+        var rootPage = GetPage(tableEntry.RootPage);
         var cells = rootPage.Header.PageType switch
         {
             PageType.LeafTable => query.GetResult(rootPage),
@@ -39,51 +100,73 @@ public record Database
             _ => throw new InvalidOperationException("Unexpected header page type")
         };
 
-        return new SqlQueryResult(cells, query);
+        return new SqlQueryResult(cells.ToArray(), query);
     }
 
-    public Cell GetSchemaCell(string tableName) => SchemaPage.Cells.First(cell => cell.Record!.Columns[2].Value!.ToString() == tableName);
-
-    private static TableSchema GetTableSchema(Cell tableSchemaCell)
+    private IEnumerable<Cell> TraversePages(Page rootPage, SqlQuery query)
     {
-        var createSql = tableSchemaCell.Record!.Columns[^1].Value!.ToString()!;
-
-        return new TableSchema(createSql);
-    }
-
-    public Page GetPage(int pageNumber)
-    {
-        var pageBytes = new byte[SchemaPage.DbHeader!.PageSize];
-
-        _databaseFileStream.Seek((pageNumber - 1) * SchemaPage.DbHeader!.PageSize, SeekOrigin.Begin);
-        _databaseFileStream.ReadExactly(pageBytes, 0, SchemaPage.DbHeader.PageSize);
-
-        using var pageStream = new MemoryStream(pageBytes);
-        return new Page(pageStream);
-    }
-
-    private Cell[] TraversePages(Page rootPage, SqlQuery query)
-    {
-        List<Cell> cells = [];
-
-        for (var i = 0; i <= rootPage.Cells.Length; i++)
+        if (rootPage.Header.PageType is PageType.LeafTable or PageType.LeafIndex or PageType.InteriorIndex)
         {
-            var pageNumber = i < rootPage.Cells.Length
-                ? rootPage.Cells[i].LeftChildPageNumber!.Value // For all but the last iteration, use the left child page number from the current cell
-                : rootPage.Header.RightMostPointer; // For the last iteration, use the rightmost child page number from the page header
+            foreach (var cell in query.GetResult(rootPage))
+                yield return cell;
+        }
 
-            var childPage = GetPage((int)pageNumber);
-
-            if (childPage.Header.PageType == PageType.LeafTable)
+        if (rootPage.Header.PageType is PageType.InteriorTable or PageType.InteriorIndex)
+        {
+            foreach (var cell in rootPage.Cells)
             {
-                cells.AddRange(query.GetResult(childPage));
+                var childPage = GetPage((int)cell.LeftChildPageNumber!.Value);
+                foreach (var childCell in TraversePages(childPage, query))
+                    yield return childCell;
             }
-            else if (childPage.Header.PageType == PageType.InteriorTable)
+
+            if (rootPage.Header.RightMostPointer.HasValue)
             {
-                cells.AddRange(TraversePages(childPage, query));
+                var rightMostPage = GetPage((int)rootPage.Header.RightMostPointer.Value);
+                foreach (var rightMostCell in TraversePages(rightMostPage, query))
+                    yield return rightMostCell;
+            }
+        }
+    }
+
+    private IEnumerable<Cell> TraverseTablePages(Page page, long[] matchingRowIds)
+    {
+        if (matchingRowIds.Length == 0)
+            yield break;
+
+        foreach (var rowId in matchingRowIds)
+        {
+            var cell = FindCellByRowId(page, rowId);
+            if (cell != null)
+                yield return cell;
+        }
+    }
+
+    private Cell? FindCellByRowId(Page page, long targetRowId)
+    {
+        if (page.Header.PageType == PageType.LeafTable)
+            return page.Cells.FirstOrDefault(cell => cell.RowId.HasValue && cell.RowId.Value == targetRowId);
+
+        if (page.Header.PageType != PageType.InteriorTable)
+            return null;
+
+        // Binary search through interior cells to find the right path
+        foreach (var cell in page.Cells)
+        {
+            if (cell.RowId >= targetRowId)
+            {
+                var childPage = GetPage((int)cell.LeftChildPageNumber!.Value);
+                return FindCellByRowId(childPage, targetRowId);
             }
         }
 
-        return cells.ToArray();
+        // If we haven't found the right path yet, check the rightmost pointer
+        if (page.Header.RightMostPointer.HasValue)
+        {
+            var rightMostPage = GetPage((int)page.Header.RightMostPointer.Value);
+            return FindCellByRowId(rightMostPage, targetRowId);
+        }
+
+        return null;
     }
 }

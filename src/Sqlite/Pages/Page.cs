@@ -59,25 +59,59 @@ public record Page
         {
             pageStream.Seek(CellPointers[i], SeekOrigin.Begin);
 
-            if (Header.PageType == PageType.InteriorTable)
+            switch (Header.PageType)
             {
-                var leftChildPageNumber = pageStream.ReadUInt32BigEndian();
-                var rowId = pageStream.ReadVarint();
+                case PageType.InteriorTable:
+                {
+                    var leftChildPageNumber = pageStream.ReadUInt32BigEndian();
+                    var rowId = pageStream.ReadVarint();
 
-                cells[i] = new Cell(leftChildPageNumber, null, rowId, null, null);
-            }
-            else if (Header.PageType == PageType.LeafTable)
-            {
-                var size = pageStream.ReadVarint();
-                var rowId = pageStream.ReadVarint();
+                    cells[i] = new Cell(leftChildPageNumber, null, rowId, null, null);
+                    break;
+                }
+                case PageType.LeafTable:
+                {
+                    var size = pageStream.ReadVarint();
+                    var rowId = pageStream.ReadVarint();
 
-                var recordBytes = new byte[size];
-                pageStream.ReadExactly(recordBytes, 0, (int)size);
+                    var recordBytes = new byte[size];
+                    pageStream.ReadExactly(recordBytes, 0, (int)size);
 
-                using var recordStream = new MemoryStream(recordBytes);
-                var record = new Record(recordStream);
+                    using var recordStream = new MemoryStream(recordBytes);
+                    var record = new Record(recordStream);
 
-                cells[i] = new Cell(null, size, rowId, record, null);
+                    cells[i] = new Cell(null, size, rowId, record, null);
+                    break;
+                }
+                case PageType.InteriorIndex:
+                {
+                    var leftChildPageNumber = pageStream.ReadUInt32BigEndian();
+                    var size = pageStream.ReadVarint();
+
+                    var recordBytes = new byte[size];
+                    pageStream.ReadExactly(recordBytes, 0, (int)size);
+
+                    using var recordStream = new MemoryStream(recordBytes);
+                    var record = new Record(recordStream);
+
+                    cells[i] = new Cell(leftChildPageNumber, size, null, record, null);
+                    break;
+                }
+                case PageType.LeafIndex:
+                {
+                    var size = pageStream.ReadVarint();
+
+                    var recordBytes = new byte[size];
+                    pageStream.ReadExactly(recordBytes, 0, (int)size);
+
+                    using var recordStream = new MemoryStream(recordBytes);
+                    var record = new Record(recordStream);
+
+                    cells[i] = new Cell(null, size, null, record, null);
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException($"Unknown page type: {Header.PageType}");
             }
         }
 

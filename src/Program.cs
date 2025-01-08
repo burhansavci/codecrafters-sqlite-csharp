@@ -15,21 +15,16 @@ var databaseFile = File.OpenRead(path);
 if (command == ".dbinfo")
 {
     var db = new Database(databaseFile);
-    Console.WriteLine($"database page size: {db.SchemaPage.DbHeader!.PageSize}");
+    Console.WriteLine($"database page size: {db.SchemaPage.DbHeader.PageSize}");
     Console.WriteLine($"number of tables: {db.SchemaPage.Header.NumberOfCells}");
 }
 else if (command == ".tables")
 {
     var db = new Database(databaseFile);
 
-    foreach (var cell in db.SchemaPage.Cells)
+    foreach (var table in db.SchemaPage.Tables)
     {
-        var tableName = cell.Record!.Columns[2].Value!.ToString();
-
-        if (tableName == "sqlite_sequence")
-            continue;
-
-        Console.Write(tableName + " ");
+        Console.Write(table.Name + " ");
     }
 }
 else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.InvariantCultureIgnoreCase))
@@ -38,11 +33,9 @@ else if (command.StartsWith("SELECT COUNT(*) FROM", StringComparison.InvariantCu
 
     var db = new Database(databaseFile);
 
-    var schemaCell = db.GetSchemaCell(tableName);
+    var tableEntry = db.SchemaPage.GetTableEntry(tableName);
 
-    var rootPageNumber = (byte)schemaCell.Record!.Columns[3].Value!;
-
-    var page = db.GetPage(rootPageNumber);
+    var page = db.GetPage(tableEntry!.RootPage);
 
     Console.WriteLine(page.Header.NumberOfCells);
 }

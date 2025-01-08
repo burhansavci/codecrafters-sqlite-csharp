@@ -9,7 +9,7 @@ public record Column
     {
         SerialTypeCode = serialTypeCode;
         Index = index;
-        
+
         var contentReadSize = serialTypeCode.ContentSize > recordStream.Length - recordStream.Position
             ? (int)(recordStream.Length - recordStream.Position)
             : serialTypeCode.ContentSize;
@@ -30,9 +30,9 @@ public record Column
             SerialType.Null => null,
             SerialType.Int8 => buffer[0],
             SerialType.Int16 => BinaryPrimitives.ReadInt16BigEndian(buffer),
-            SerialType.Int24 => buffer[0] | buffer[1] << 8 | buffer[2] << 16,
+            SerialType.Int24 => (buffer[0] << 16) | (buffer[1] << 8) | buffer[2],
             SerialType.Int32 => BinaryPrimitives.ReadInt32BigEndian(buffer),
-            SerialType.Int48 => buffer[0] | buffer[1] << 8 | buffer[2] << 16 | buffer[3] << 24 | buffer[4] << 32 | buffer[5] << 40,
+            SerialType.Int48 => ((long)buffer[0] << 40) | ((long)buffer[1] << 32) | ((long)buffer[2] << 24) | ((long)buffer[3] << 16) | ((long)buffer[4] << 8) | buffer[5],
             SerialType.Int64 => BinaryPrimitives.ReadInt64BigEndian(buffer),
             SerialType.Float64 => BinaryPrimitives.ReadDoubleBigEndian(buffer),
             SerialType.IntegerZero => 0,

@@ -5,90 +5,89 @@ namespace codecrafters_sqlite.Sqlite.Queries;
 
 public record SqlQuery
 {
-    private readonly string[] _columnNames;
+    private ColumnInfo[]? _selectedColumns;
 
-    public SqlQuery(string query)
+    public SqlQuery(string sql)
     {
-        ArgumentNullException.ThrowIfNull(query);
-        query = query.ToLowerInvariant();
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
 
-        var parts = query.Split("from", StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 2)
-            throw new ArgumentException("Invalid SQL query format", nameof(query));
+        var parts = sql.Split(" ", StringSplitOptions.RemoveEmptyEntries);
 
-        _columnNames = ParseSelectColumnNames(parts[0]);
-        (TableName, WhereColumnName, WhereValue) = ParseFromClause(parts[1]);
+        if (!parts[0].Equals("select", StringComparison.InvariantCultureIgnoreCase))
+            throw new ArgumentException("Only SELECT queries are supported", nameof(sql));
+
+        var fromIndex = Array.FindIndex(parts, p => p.Equals("from", StringComparison.InvariantCultureIgnoreCase));
+        if (fromIndex == -1)
+            throw new ArgumentException("FROM clause is required", nameof(sql));
+
+        // Parse SELECT columns
+        var selectPart = string.Join(" ", parts.Take(fromIndex)).Replace("select", "", StringComparison.InvariantCultureIgnoreCase).Trim();
+        SelectColumnNames = selectPart.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(c => c.Trim()).ToArray();
+
+        // Get table name and ensure it's not followed by other clauses
+        if (fromIndex + 1 >= parts.Length)
+            throw new ArgumentException("Table name is required after FROM", nameof(sql));
+
+        TableName = parts[fromIndex + 1];
+
+        // Parse WHERE clause if it exists
+        var whereIndex = Array.FindIndex(parts, p => p.Equals("where", StringComparison.InvariantCultureIgnoreCase));
+        if (whereIndex != -1)
+        {
+            if (whereIndex + 1 >= parts.Length)
+                throw new ArgumentException("Condition is required after WHERE", nameof(sql));
+
+            var whereClause = string.Join(" ", parts.Skip(whereIndex + 1));
+            Where = new WhereClause(whereClause);
+        }
     }
 
-    public ColumnSchema[]? Columns { get; private set; }
     public string TableName { get; }
-    public string? WhereColumnName { get; }
-    public string? WhereValue { get; }
-    public int? WhereColumnIndex { get; private set; }
+    public WhereClause? Where { get; }
+    public string[] SelectColumnNames { get; }
+    public IReadOnlyList<ColumnInfo> SelectedColumns => _selectedColumns ?? throw new InvalidOperationException("Table schema not yet applied");
 
-    public void ApplySchema(TableSchema schema)
+    public void ApplyTableSchema(SchemaEntry tableEntry)
     {
-        Columns = new ColumnSchema[_columnNames.Length];
+        ArgumentNullException.ThrowIfNull(tableEntry);
+        ArgumentNullException.ThrowIfNull(tableEntry.Columns);
 
-        for (var i = 0; i < _columnNames.Length; i++)
+        // Map column names to their schema information
+        _selectedColumns = new ColumnInfo[SelectColumnNames.Length];
+        for (int i = 0; i < SelectColumnNames.Length; i++)
         {
-            var column = schema.GetColumn(_columnNames[i]);
-            Columns[i] = column;
+            var columnName = SelectColumnNames[i];
+            var column = tableEntry.Columns.FirstOrDefault(c => string.Equals(c.Name, columnName, StringComparison.InvariantCultureIgnoreCase));
 
-            if (string.Equals(WhereColumnName, column.Name, StringComparison.InvariantCultureIgnoreCase))
-                WhereColumnIndex = column.Index;
+            _selectedColumns[i] = column ?? throw new InvalidOperationException($"Column {columnName} not found in table schema");
         }
 
-        // Handle case where WHERE column wasn't in selected columns
-        if (WhereColumnName != null && WhereColumnIndex == null)
-            WhereColumnIndex = schema.GetColumn(WhereColumnName).Index;
+        // Apply WHERE clause schema if it exists
+        if (Where == null)
+            return;
+
+        var whereColumn = tableEntry.Columns.FirstOrDefault(c => string.Equals(c.Name, Where.ColumnName, StringComparison.InvariantCultureIgnoreCase));
+
+        if (whereColumn == null)
+            throw new InvalidOperationException($"Column {Where.ColumnName} not found in table schema");
+
+        Where.ApplyTableColumn(whereColumn);
     }
 
-    public Cell[] GetResult(Page page) =>
-        string.IsNullOrWhiteSpace(WhereColumnName)
-            ? page.Cells
-            : page.Cells.Where(IsMatchingWhereCondition).ToArray();
-
-    private static string[] ParseSelectColumnNames(string selectPart) =>
-        selectPart
-            .Replace("select", "", StringComparison.OrdinalIgnoreCase)
-            .Trim()
-            .Split(',')
-            .Select(c => c.Trim())
-            .ToArray();
-
-    private static (string tableName, string? whereColumn, string? whereValue) ParseFromClause(string fromPart)
+    public void ApplyIndexSchema(SchemaEntry? indexEntry)
     {
-        if (!fromPart.Contains("where", StringComparison.OrdinalIgnoreCase))
-            return (fromPart.Trim(), null, null);
+        if (Where == null || indexEntry == null)
+            return;
 
-        var parts = fromPart.Split("where", StringSplitOptions.RemoveEmptyEntries);
-        var tableName = parts[0].Trim();
+        var column = indexEntry.Columns!.FirstOrDefault(c => string.Equals(c.Name, Where.ColumnName, StringComparison.InvariantCultureIgnoreCase));
 
-        var whereParts = parts[1].Trim().Split('=');
-        if (whereParts.Length != 2)
-            throw new ArgumentException("Invalid WHERE clause format");
-
-        return (
-            tableName,
-            whereParts[0].Trim(),
-            whereParts[1].Trim().Trim('\'')
-        );
+        if (column != null)
+            Where.ApplyIndexColumn(column);
     }
 
-    private bool IsMatchingWhereCondition(Cell cell)
+    public IEnumerable<Cell> GetResult(Page page)
     {
-        if (WhereColumnIndex is null)
-            return true;
-
-        if (cell.Record?.Columns[WhereColumnIndex.Value].Value is null)
-            return false;
-
-        if (Columns!.FirstOrDefault(x => x.IsRowIdAlias)?.Index == WhereColumnIndex && WhereValue is not null)
-            return cell.RowId == long.Parse(WhereValue);
-
-        var columnValue = cell.Record.Columns.First(x => x.Index == WhereColumnIndex).Value?.ToString();
-
-        return string.Equals(columnValue, WhereValue, StringComparison.InvariantCultureIgnoreCase);
+        ArgumentNullException.ThrowIfNull(page);
+        return Where == null ? page.Cells : page.Cells.Where(cell => Where.Matches(cell));
     }
 }

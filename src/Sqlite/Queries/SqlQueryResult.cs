@@ -12,26 +12,20 @@ public record SqlQueryResult(Cell[] Cells, SqlQuery Query)
         var sb = new StringBuilder();
         foreach (var cell in Cells)
         {
-            for (int i = 0; i < Query.Columns!.Length; i++)
+            if (cell.Record == null)
+                continue;
+
+            for (int i = 0; i < Query.SelectedColumns.Count; i++)
             {
-                var queryColumn = Query.Columns[i];
-                var recordColumn = cell.Record!.Columns[queryColumn.Index];
+                var column = Query.SelectedColumns[i];
 
-                // Use cell rowId when PK is alias of rowid: https://www.sqlite.org/fileformat.html#representation_of_sql_tables
-                if (queryColumn.IsRowIdAlias && recordColumn.Value is null)
-                {
-                    sb.Append(cell.RowId);
-                }
-                else
-                {
-                    sb.Append(recordColumn.Value);
-                }
+                sb.Append(column.IsRowIdAlias ? cell.RowId : cell.Record.Columns[column.Index].Value);
 
-                if (i < Query.Columns.Length - 1)
+                if (i < Query.SelectedColumns.Count - 1)
                     sb.Append(ColumnSeparator);
             }
 
-            sb.Append(Environment.NewLine);
+            sb.AppendLine();
         }
 
         return sb.ToString();
