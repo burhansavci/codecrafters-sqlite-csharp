@@ -38,7 +38,7 @@ public record Database
         var indexEntry = SchemaPage.GetIndexEntry(query.TableName);
         if (query.TryApplyIndexSchema(indexEntry))
         {
-            var matchingRowIds = DoIndexSeek(query, indexEntry!);
+            var matchingRowIds = DoIndexScan(query, indexEntry!);
 
             return DoKeyLookup(query, tableEntry, matchingRowIds);
         }
@@ -58,7 +58,7 @@ public record Database
         return new Page(pageStream);
     }
 
-    private long[] DoIndexSeek(SqlQuery query, SchemaEntry indexEntry)
+    private long[] DoIndexScan(SqlQuery query, SchemaEntry indexEntry)
     {
         var indexRootPage = GetPage(indexEntry.RootPage);
 
