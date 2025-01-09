@@ -15,13 +15,13 @@ public record SqlQueryResult(Cell[] Cells, SqlQuery Query)
             if (cell.Record == null)
                 continue;
 
-            for (int i = 0; i < Query.SelectedColumns.Count; i++)
+            for (int i = 0; i < Query.SelectedColumns.Length; i++)
             {
                 var column = Query.SelectedColumns[i];
 
                 sb.Append(column.IsRowIdAlias ? cell.RowId : cell.Record.Columns[column.Index].Value);
 
-                if (i < Query.SelectedColumns.Count - 1)
+                if (i < Query.SelectedColumns.Length - 1)
                     sb.Append(ColumnSeparator);
             }
 

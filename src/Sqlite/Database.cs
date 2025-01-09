@@ -35,13 +35,10 @@ public record Database
         if (query.Where == null)
             return DoFullTableScan(query, tableEntry);
 
-        // If there is a WHERE clause, try to use an index if available
         var indexEntry = SchemaPage.GetIndexEntry(query.TableName);
-        query.ApplyIndexSchema(indexEntry);
-
-        if (query.Where.IndexColumn != null)
+        if (query.TryApplyIndexSchema(indexEntry))
         {
-            var matchingRowIds = DoIndexScan(query, indexEntry);
+            var matchingRowIds = DoIndexSeek(query, indexEntry!);
 
             return DoKeyLookup(query, tableEntry, matchingRowIds);
         }
@@ -61,9 +58,9 @@ public record Database
         return new Page(pageStream);
     }
 
-    private long[] DoIndexScan(SqlQuery query, SchemaEntry? indexEntry)
+    private long[] DoIndexSeek(SqlQuery query, SchemaEntry indexEntry)
     {
-        var indexRootPage = GetPage(indexEntry!.RootPage);
+        var indexRootPage = GetPage(indexEntry.RootPage);
 
         var indexCells = indexRootPage.Header.PageType switch
         {

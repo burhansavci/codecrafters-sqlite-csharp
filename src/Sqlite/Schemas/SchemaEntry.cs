@@ -59,8 +59,5 @@ public record SchemaEntry
 
     public string? Sql { get; }
 
-    /// <summary>
-    /// The columns defined in this schema entry
-    /// </summary>
-    public ColumnInfo[]? Columns { get; }
+    public ColumnInfo[] Columns { get; }
 }

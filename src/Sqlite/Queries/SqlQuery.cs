@@ -44,15 +44,14 @@ public record SqlQuery
 
     public string TableName { get; }
     public WhereClause? Where { get; }
-    public string[] SelectColumnNames { get; }
-    public IReadOnlyList<ColumnInfo> SelectedColumns => _selectedColumns ?? throw new InvalidOperationException("Table schema not yet applied");
+    public ColumnInfo[] SelectedColumns => _selectedColumns ?? throw new InvalidOperationException("Table schema not yet applied");
+    private string[] SelectColumnNames { get; }
 
     public void ApplyTableSchema(SchemaEntry tableEntry)
     {
         ArgumentNullException.ThrowIfNull(tableEntry);
         ArgumentNullException.ThrowIfNull(tableEntry.Columns);
 
-        // Map column names to their schema information
         _selectedColumns = new ColumnInfo[SelectColumnNames.Length];
         for (int i = 0; i < SelectColumnNames.Length; i++)
         {
@@ -62,7 +61,6 @@ public record SqlQuery
             _selectedColumns[i] = column ?? throw new InvalidOperationException($"Column {columnName} not found in table schema");
         }
 
-        // Apply WHERE clause schema if it exists
         if (Where == null)
             return;
 
@@ -74,15 +72,18 @@ public record SqlQuery
         Where.ApplyTableColumn(whereColumn);
     }
 
-    public void ApplyIndexSchema(SchemaEntry? indexEntry)
+    public bool TryApplyIndexSchema(SchemaEntry? indexEntry)
     {
         if (Where == null || indexEntry == null)
-            return;
+            return false;
 
-        var column = indexEntry.Columns!.FirstOrDefault(c => string.Equals(c.Name, Where.ColumnName, StringComparison.InvariantCultureIgnoreCase));
+        var column = indexEntry.Columns.FirstOrDefault(c => string.Equals(c.Name, Where.ColumnName, StringComparison.InvariantCultureIgnoreCase));
 
-        if (column != null)
-            Where.ApplyIndexColumn(column);
+        if (column == null)
+            return false;
+
+        Where.ApplyIndexColumn(column);
+        return true;
     }
 
     public IEnumerable<Cell> GetResult(Page page)
