@@ -38,7 +38,7 @@ public record Database
         var indexEntry = SchemaPage.GetIndexEntry(query.TableName);
         if (query.TryApplyIndexSchema(indexEntry))
         {
-            var matchingRowIds = DoIndexScan(query, indexEntry!);
+            var matchingRowIds = DoIndexSeek(query, indexEntry!);
 
             return DoKeyLookup(query, tableEntry, matchingRowIds);
         }
@@ -58,18 +58,13 @@ public record Database
         return new Page(pageStream);
     }
 
-    private long[] DoIndexScan(SqlQuery query, SchemaEntry indexEntry)
+    private long[] DoIndexSeek(SqlQuery query, SchemaEntry indexEntry)
     {
         var indexRootPage = GetPage(indexEntry.RootPage);
 
-        var indexCells = indexRootPage.Header.PageType switch
-        {
-            PageType.LeafIndex => query.GetResult(indexRootPage),
-            PageType.InteriorIndex => TraversePages(indexRootPage, query),
-            _ => throw new InvalidOperationException("Unexpected header page type")
-        };
+        var indexCells = TraverseIndexPages(indexRootPage, query);
 
-        var matchingRowIds = indexCells.Select(cell => Convert.ToInt64(cell.Record!.Columns[1].Value!)).ToArray();
+        var matchingRowIds = indexCells.Select(cell => Convert.ToInt64(cell.Record!.Columns[^1].Value!)).ToArray();
         return matchingRowIds;
     }
 
@@ -77,12 +72,7 @@ public record Database
     {
         var tableRootPage = GetPage(tableEntry.RootPage);
 
-        var matchingCells = tableRootPage.Header.PageType switch
-        {
-            PageType.LeafTable => query.GetResult(tableRootPage),
-            PageType.InteriorTable => TraverseTablePages(tableRootPage, matchingRowIds),
-            _ => throw new InvalidOperationException("Unexpected header page type")
-        };
+        var matchingCells = TraverseTablePages(tableRootPage, matchingRowIds);
 
         return new SqlQueryResult(matchingCells.ToArray(), query);
     }
@@ -90,50 +80,93 @@ public record Database
     private SqlQueryResult DoFullTableScan(SqlQuery query, SchemaEntry tableEntry)
     {
         var rootPage = GetPage(tableEntry.RootPage);
-        var cells = rootPage.Header.PageType switch
-        {
-            PageType.LeafTable => query.GetResult(rootPage),
-            PageType.InteriorTable => TraversePages(rootPage, query),
-            _ => throw new InvalidOperationException("Unexpected header page type")
-        };
+        var cells = TraverseTablePages(rootPage, query);
 
         return new SqlQueryResult(cells.ToArray(), query);
     }
 
-    private IEnumerable<Cell> TraversePages(Page rootPage, SqlQuery query)
+    private IEnumerable<Cell> TraverseTablePages(Page rootPage, SqlQuery query)
     {
-        if (rootPage.Header.PageType is PageType.LeafTable or PageType.LeafIndex or PageType.InteriorIndex)
-        {
+        if (rootPage.Header.PageType is PageType.InteriorIndex or PageType.LeafIndex)
+            throw new InvalidOperationException("Unexpected header page type");
+
+        if (rootPage.Header.PageType is PageType.LeafTable)
             foreach (var cell in query.GetResult(rootPage))
                 yield return cell;
+
+        if (rootPage.Header.PageType is not PageType.InteriorTable)
+            yield break;
+
+        foreach (var cell in rootPage.Cells)
+        {
+            var childPage = GetPage((int)cell.LeftChildPageNumber!.Value);
+            foreach (var childCell in TraverseTablePages(childPage, query))
+                yield return childCell;
         }
 
-        if (rootPage.Header.PageType is PageType.InteriorTable or PageType.InteriorIndex)
+        if (rootPage.Header.RightMostPointer.HasValue)
         {
-            foreach (var cell in rootPage.Cells)
-            {
-                var childPage = GetPage((int)cell.LeftChildPageNumber!.Value);
-                foreach (var childCell in TraversePages(childPage, query))
-                    yield return childCell;
-            }
-
-            if (rootPage.Header.RightMostPointer.HasValue)
-            {
-                var rightMostPage = GetPage((int)rootPage.Header.RightMostPointer.Value);
-                foreach (var rightMostCell in TraversePages(rightMostPage, query))
-                    yield return rightMostCell;
-            }
+            var rightMostPage = GetPage((int)rootPage.Header.RightMostPointer.Value);
+            foreach (var rightMostCell in TraverseTablePages(rightMostPage, query))
+                yield return rightMostCell;
         }
     }
 
-    private IEnumerable<Cell> TraverseTablePages(Page page, long[] matchingRowIds)
+    private IEnumerable<Cell> TraverseIndexPages(Page rootPage, SqlQuery query)
     {
+        if (rootPage.Header.PageType is PageType.InteriorTable or PageType.LeafTable)
+            throw new InvalidOperationException("Unexpected header page type");
+
+        if (rootPage.Header.PageType == PageType.LeafIndex)
+            foreach (var cell in query.GetResult(rootPage))
+                yield return cell;
+
+        if (rootPage.Header.PageType is not PageType.InteriorIndex)
+            yield break;
+
+        foreach (var cell in rootPage.Cells)
+        {
+            var cellValue = cell.Record!.Columns[query.Where!.IndexColumn!.Index].Value?.ToString() ?? string.Empty;
+            var queryValue = query.Where!.Value;
+            var comparison = string.Compare(cellValue, queryValue, StringComparison.OrdinalIgnoreCase);
+
+            if (comparison > 0)
+            {
+                var leftChildPage = GetPage((int)cell.LeftChildPageNumber!.Value);
+                foreach (var childCell in TraverseIndexPages(leftChildPage, query))
+                    yield return childCell;
+            }
+            else if (comparison == 0)
+            {
+                var cells = new List<Cell> { cell };
+
+                var leftChildPage = GetPage((int)cell.LeftChildPageNumber!.Value);
+                cells.AddRange(TraverseIndexPages(leftChildPage, query));
+
+                foreach (var childCell in cells)
+                    yield return childCell;
+            }
+        }
+
+        if (rootPage.Header.RightMostPointer.HasValue)
+        {
+            var rightMostPage = GetPage((int)rootPage.Header.RightMostPointer.Value);
+            foreach (var rightMostCell in TraverseIndexPages(rightMostPage, query))
+                yield return rightMostCell;
+        }
+    }
+
+    private IEnumerable<Cell> TraverseTablePages(Page rootPage, long[] matchingRowIds)
+    {
+        if (rootPage.Header.PageType is PageType.InteriorIndex or PageType.LeafIndex)
+            throw new InvalidOperationException("Unexpected header page type");
+
         if (matchingRowIds.Length == 0)
             yield break;
 
         foreach (var rowId in matchingRowIds)
         {
-            var cell = FindCellByRowId(page, rowId);
+            var cell = FindCellByRowId(rootPage, rowId);
             if (cell != null)
                 yield return cell;
         }
